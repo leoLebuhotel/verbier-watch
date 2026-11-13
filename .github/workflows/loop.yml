@@ -1,0 +1,45 @@
+name: Verbier watcher loop
+
+# Un job qui interroge l'API toutes les 20 s pendant ~5h45, puis se relance
+# lui-même (workflow_dispatch). Le week-end, le script se met en pause.
+# Le cron horaire sert de filet de sécurité si la chaîne casse.
+# Pour tout arrêter : Actions > Verbier watcher loop > ... > Disable workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      test_push:
+        description: "Envoyer une notif de test au démarrage"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "7 * * * *"
+
+concurrency:
+  group: verbier-loop
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      TZ: Europe/Zurich
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 watch_loop.py
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TEST_PUSH: ${{ inputs.test_push && '1' || '0' }}
+          LOGFILE: ventes.log
+      - name: Relancer la boucle
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$(date +%F)" < "2026-12-05" ]]; then
+            gh workflow run loop.yml --repo "$GITHUB_REPOSITORY" --ref main
+          fi
